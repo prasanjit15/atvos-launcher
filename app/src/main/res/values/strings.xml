@@ -109,6 +109,58 @@
     <string name="settings_time_format_about">How the clock beside your profile picture shows the time.</string>
     <string name="settings_12_hour">12-Hour</string>
     <string name="settings_24_hour">24-Hour</string>
+    <!-- Weather settings -->
+    <string name="settings_weather">Weather</string>
+    <string name="settings_weather_show">Show Weather</string>
+    <string name="settings_weather_show_about">Shows current weather and temperature in the status pill, using Open-Meteo.</string>
+    <string name="settings_weather_unit">Temperature Unit</string>
+    <string name="settings_weather_unit_about">Choose between Celsius and Fahrenheit.</string>
+    <string name="settings_weather_celsius">Celsius (°C)</string>
+    <string name="settings_weather_fahrenheit">Fahrenheit (°F)</string>
+    <string name="settings_weather_city">Weather Location</string>
+    <string name="settings_weather_city_about">City for weather forecasts. Set to Auto to use your TV\'s time zone.</string>
+    <string name="settings_weather_auto">Auto (%1$s)</string>
+    <!-- Ambient scene settings -->
+    <string name="settings_scenes">Ambient Scene</string>
+    <string name="settings_scenes_about">Choose a scenic ambient wallpaper preset for your TV.</string>
+    <string name="settings_always_ambient">Always Show Scene</string>
+    <string name="settings_always_ambient_about">Keeps your chosen ambient scene visible on screen instead of switching to app artwork.</string>
+    <string name="scene_shuffle">Auto-Shuffle (Slideshow)</string>
+    <string name="settings_scene_shuffle_about">Cycles through all 21 scenic wallpapers automatically.</string>
+    <string name="settings_shuffle_interval">Shuffle Frequency</string>
+    <string name="settings_shuffle_interval_about">How often the ambient scene automatically changes.</string>
+    <string name="settings_wallpapers_header">Wallpapers</string>
+    <string name="shuffle_interval_60s">60 seconds</string>
+    <string name="shuffle_interval_5m">5 minutes</string>
+    <string name="shuffle_interval_15m">15 minutes</string>
+    <string name="shuffle_interval_30m">30 minutes</string>
+    <string name="shuffle_interval_1h">1 hour</string>
+    <string name="shuffle_short_60s">60s</string>
+    <string name="shuffle_short_5m">5m</string>
+    <string name="shuffle_short_15m">15m</string>
+    <string name="shuffle_short_30m">30m</string>
+    <string name="shuffle_short_1h">1h</string>
+    <string name="scene_aurora">Aurora (Dawn)</string>
+    <string name="scene_golden_hour">Golden Hour</string>
+    <string name="scene_night_skyline">Night Skyline</string>
+    <string name="scene_waterline">Waterline</string>
+    <string name="scene_misty_pine">Misty Pine (Fog)</string>
+    <string name="scene_tessellated">Tessellated Pavement</string>
+    <string name="scene_grose_valley">Grose Valley</string>
+    <string name="scene_albury_storm">Albury Storm</string>
+    <string name="scene_aresquiers">Aresquiers Beach</string>
+    <string name="scene_vang_vieng">Vang Vieng Sunset</string>
+    <string name="scene_wp_anders_snow">Snowy Peak (Anders)</string>
+    <string name="scene_wp_anders_lake">Alpine Lake (Anders)</string>
+    <string name="scene_wp_andrew_coast">Sunset Coast (Andrew)</string>
+    <string name="scene_wp_clay_city">City Lights (Clay)</string>
+    <string name="scene_wp_cristina_dolomites">Dolomites Valley (Cristina)</string>
+    <string name="scene_wp_john_highway">Mountain Highway (John)</string>
+    <string name="scene_wp_luca_braies">Emerald Lake (Luca)</string>
+    <string name="scene_wp_luca_starry">Starry Night (Luca)</string>
+    <string name="scene_wp_martin_forest">Misty Forest (Martin)</string>
+    <string name="scene_wp_tobias_autumn">Autumn Ridge (Tobias)</string>
+    <string name="scene_wp_urban_desert">Desert Dunes (Urban)</string>
     <string name="settings_profiles">Profiles and Accounts</string>
     <string name="settings_account">Account</string>
     <string name="settings_account_about">The Google account whose picture appears beside the clock. Select to choose an account.</string>
@@ -169,6 +221,7 @@
     <string name="a11y_settings">Settings</string>
     <!-- The switches next to the Settings icon. They open atvOS Settings. -->
     <string name="a11y_launcher_settings">atvOS Launcher Settings</string>
+    <string name="a11y_wallpapers">Wallpapers</string>
     <!-- A Settings choice that is selected. -->
     <string name="a11y_selected">Selected</string>
     <!-- The accessibility action on an app that opens its long-press menu (Move to…, App Info, Delete App). -->

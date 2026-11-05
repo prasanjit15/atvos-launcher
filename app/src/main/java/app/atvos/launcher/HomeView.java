@@ -120,6 +120,18 @@ final class HomeView extends View {
         /** Settings > Time Format: true for 24-hour time. The default is the setting of the TV. */
         boolean use24Hour();
         void setUse24Hour(boolean on);
+        boolean weatherEnabled();
+        void setWeatherEnabled(boolean on);
+        boolean weatherFahrenheit();
+        void setWeatherFahrenheit(boolean on);
+        String weatherCity();
+        void setWeatherCity(String city);
+        String ambientScene();
+        void setAmbientScene(String scene);
+        long shuffleInterval();
+        void setShuffleInterval(long ms);
+        boolean alwaysAmbient();
+        void setAlwaysAmbient(boolean on);
         /**
          * The full-screen top shelf opened or closed. Shows its pictures with the details scrim or with the dock scrim.
          */
@@ -341,6 +353,35 @@ final class HomeView extends View {
     private float timeWidth;
     private final Runnable tick = this::tick;
 
+    // Weather
+    private Weather.WeatherInfo weatherInfo;
+    private String weatherText;
+    private float weatherTextWidth;
+    private Drawable weatherIcon;
+    private static final float WEATHER_ICON_SIZE = 22f;
+    private static final float WEATHER_ICON_GAP = 8f;
+    private static final float WEATHER_CLOCK_GAP = 16f;
+
+    // Couch-TV Ambient Big Clock
+    private String clockBigTime;
+    private String dateText;
+    private final TextPaint bigClockText = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    private final TextPaint bigDateText = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+
+    void setWeather(Weather.WeatherInfo info) {
+        this.weatherInfo = info;
+        if (info != null && info.temperature() != null) {
+            weatherText = info.temperature();
+            weatherTextWidth = clockText.measureText(weatherText);
+            weatherIcon = getContext().getDrawable(Weather.iconResource(info.weatherCode(), info.isDay()));
+        } else {
+            weatherText = null;
+            weatherTextWidth = 0f;
+            weatherIcon = null;
+        }
+        kick();
+    }
+
     // Drawing objects, allocated one time.
     private final Paint image = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint backdropPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
@@ -438,6 +479,16 @@ final class HomeView extends View {
         clockText.setColor(Color.WHITE);
         holdBeforeW = clockText.measureText(holdBefore);
         holdW = holdBeforeW + HOLD_KEY + 4f + clockText.measureText(holdAfter);
+        bigClockText.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        bigClockText.setTextSize(190f);
+        bigClockText.setTextAlign(Paint.Align.CENTER);
+        bigClockText.setColor(Color.WHITE);
+        bigClockText.setShadowLayer(18f, 0f, 4f, 0x66000000);
+        bigDateText.setTypeface(medium);
+        bigDateText.setTextSize(32f);
+        bigDateText.setTextAlign(Paint.Align.CENTER);
+        bigDateText.setColor(0xE6FFFFFF);
+        bigDateText.setShadowLayer(8f, 0f, 2f, 0x77000000);
         labelText.setTypeface(medium);
         labelText.setTextSize(25f);
         labelText.setTextAlign(Paint.Align.CENTER);
@@ -545,6 +596,19 @@ final class HomeView extends View {
             @Override public void setLight(boolean on) { HomeView.this.host.setLightAppearance(on); }
             @Override public boolean use24Hour() { return HomeView.this.host.use24Hour(); }
             @Override public void setUse24Hour(boolean on) { HomeView.this.host.setUse24Hour(on); }
+            @Override public boolean weatherEnabled() { return HomeView.this.host.weatherEnabled(); }
+            @Override public void setWeatherEnabled(boolean on) { HomeView.this.host.setWeatherEnabled(on); }
+            @Override public boolean weatherFahrenheit() { return HomeView.this.host.weatherFahrenheit(); }
+            @Override public void setWeatherFahrenheit(boolean on) { HomeView.this.host.setWeatherFahrenheit(on); }
+            @Override public String weatherCity() { return HomeView.this.host.weatherCity(); }
+            @Override public void setWeatherCity(String city) { HomeView.this.host.setWeatherCity(city); }
+            @Override public void editText(String text, TextEdit edit) { HomeView.this.host.editText(text, edit); }
+            @Override public String ambientScene() { return HomeView.this.host.ambientScene(); }
+            @Override public void setAmbientScene(String scene) { HomeView.this.host.setAmbientScene(scene); }
+            @Override public long shuffleInterval() { return HomeView.this.host.shuffleInterval(); }
+            @Override public void setShuffleInterval(long ms) { HomeView.this.host.setShuffleInterval(ms); }
+            @Override public boolean alwaysAmbient() { return HomeView.this.host.alwaysAmbient(); }
+            @Override public void setAlwaysAmbient(boolean on) { HomeView.this.host.setAlwaysAmbient(on); }
             @Override public boolean open(int what) { return HomeView.this.host.openFromSettings(what); }
             @Override public Donation donation() { return HomeView.this.host.donation(); }
             @Override public void close() { closeSettings(); }
@@ -860,8 +924,22 @@ final class HomeView extends View {
         for (int i = 0; i < ampm.length; i++) ampm[i] = ampm[i].toUpperCase(locale);
         symbols.setAmPmStrings(ampm);
         format.setDateFormatSymbols(symbols);
-        time = format.format(new Date());
+        Date nowDate = new Date();
+        time = format.format(nowDate);
         timeWidth = clockText.measureText(time);
+        if (weatherText != null) {
+            weatherTextWidth = clockText.measureText(weatherText);
+        }
+
+        String bigPattern = host.use24Hour() ? "HH:mm" : "h:mm";
+        SimpleDateFormat bigFormat = new SimpleDateFormat(bigPattern, locale);
+        bigFormat.setTimeZone(TimeZone.getDefault());
+        clockBigTime = bigFormat.format(nowDate);
+
+        SimpleDateFormat dFormat = new SimpleDateFormat("EEEE, d MMMM", locale);
+        dFormat.setTimeZone(TimeZone.getDefault());
+        String d = dFormat.format(nowDate);
+        dateText = !d.isEmpty() ? (Character.toUpperCase(d.charAt(0)) + d.substring(1)) : "";
         if (ccOpen) cc.setState(host.controlState()); // sleep timer countdown, network changes
         kick();
         long now = System.currentTimeMillis();
@@ -1784,6 +1862,15 @@ final class HomeView extends View {
         a11y.sync();
     }
 
+    /** Opens Wallpapers menu directly full screen. */
+    void openWallpapers() {
+        closeAll();
+        settingsOpen = true;
+        settings.openPage(SettingsScreen.SCENES);
+        kick();
+        a11y.sync();
+    }
+
     private void closeSettings() {
         if (!settingsOpen) return;
         settingsOpen = false;
@@ -2267,6 +2354,12 @@ final class HomeView extends View {
             drawRow(c, offset);
             if (expand > 0.01f) drawDetails(c);
         }
+        if (!covered && expand < 0.01f && scroll < 60f) {
+            boolean showBigClock = host.alwaysAmbient() || shelf() == NO_SHELF;
+            if (showBigClock) {
+                drawCouchClock(c, (1f - scroll / 60f) * (1f - ccAnim));
+            }
+        }
         // The dock and the grid, unless a folder covers them or they are off the screen for the full-screen shelf.
         if (!covered && expand < 0.999f) {
             c.save();
@@ -2283,6 +2376,34 @@ final class HomeView extends View {
             c.restore();
         }
         if (pagerAnim > 0.01f && !covered) drawPager(c);
+    }
+
+    /**
+     * Draws the Couch-TV inspired ambient center clock (date line, large time digits, and foreground cutout).
+     */
+    private void drawCouchClock(Canvas c, float alpha) {
+        if (alpha <= 0.01f || clockBigTime == null) return;
+        int textAlpha = Math.round(255 * alpha);
+
+        // Date line: "Tuesday, 27 October  ·  30°"
+        String dateLine = dateText != null ? dateText : "";
+        if (weatherText != null && !weatherText.isEmpty()) {
+            dateLine += "  ·  " + weatherText;
+        }
+        bigDateText.setColor(Color.argb(Math.round(textAlpha * 0.92f), 255, 255, 255));
+        c.drawText(dateLine, W / 2f, 135f, bigDateText);
+
+        // Big Clock Digits: "8:47" or "22:25"
+        bigClockText.setColor(Color.argb(Math.round(textAlpha * 0.96f), 255, 255, 255));
+        c.drawText(clockBigTime, W / 2f, 315f, bigClockText);
+
+        // Scenery foreground cutout (e.g. mountain peak in front of clock digits)
+        if (backdrop != null && backdrop.foreground != null) {
+            r.set(0, 0, W, height);
+            Paint fgPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+            fgPaint.setAlpha(textAlpha);
+            c.drawBitmap(backdrop.foreground, null, r, fgPaint);
+        }
     }
 
     /**
@@ -2702,8 +2823,11 @@ final class HomeView extends View {
         int pillAlpha = Math.round(alpha * (1f - ccAnim));
         if (pillAlpha > 2) {
             float grow = 1f + 0.05f * pillAnim;
+            float weatherSection = (weatherText != null && weatherIcon != null)
+                    ? (WEATHER_ICON_SIZE + WEATHER_ICON_GAP + weatherTextWidth + WEATHER_CLOCK_GAP) : 0f;
+            float normalContent = timeWidth + weatherSection;
             // The hint widens the pill to the left. The time and the hint stay at the right, next to the avatar.
-            float content = timeWidth + (Math.max(holdW, timeWidth) - timeWidth) * holdHint;
+            float content = normalContent + (Math.max(holdW, normalContent) - normalContent) * holdHint;
             float w = (pad + content + gap + size + 8f) * grow, gh = h * grow;
             r.set(EDGE - w, cy - gh / 2f, EDGE, cy + gh / 2f);
             drawGlass(c, r, gh / 2f, 0f, GLASS_TINT, pillAlpha);
@@ -2715,8 +2839,20 @@ final class HomeView extends View {
             float end = r.left + (pad + content) * grow; // the right end of the text
             float timeFade = 1f - Math.min(1f, holdHint * 2.5f);
             if (timeFade > 0.01f) {
-                clockText.setColor(Color.argb(Math.round(pillAlpha * timeFade), ink, ink, ink));
+                int textAlpha = Math.round(pillAlpha * timeFade);
+                clockText.setColor(Color.argb(textAlpha, ink, ink, ink));
                 c.drawText(time, end - timeWidth * grow, cy + 9.5f, clockText);
+
+                if (weatherText != null && weatherIcon != null) {
+                    float timeStart = end - timeWidth * grow;
+                    float weatherTextX = timeStart - (WEATHER_CLOCK_GAP + weatherTextWidth) * grow;
+                    c.drawText(weatherText, weatherTextX, cy + 9.5f, clockText);
+
+                    float iconSize = WEATHER_ICON_SIZE * grow;
+                    float iconX = weatherTextX - (WEATHER_ICON_GAP + WEATHER_ICON_SIZE) * grow;
+                    float iconY = cy - iconSize / 2f;
+                    drawTinted(c, weatherIcon, iconX, iconY, iconSize, Color.rgb(ink, ink, ink), textAlpha);
+                }
             }
             float hintFade = Math.max(0f, (holdHint - 0.35f) / 0.65f);
             if (hintFade > 0.01f) drawHoldHint(c, end - holdW, cy, ink, Math.round(pillAlpha * hintFade * hintFade));
@@ -3249,9 +3385,12 @@ final class HomeView extends View {
                 return;
             }
             if (inDock() || pillFocused || expanded || rowFocused) {
-                float w = 22f + timeWidth + 12f + AVATAR + 8f;
+                float weatherSection = (weatherText != null && weatherIcon != null)
+                        ? (WEATHER_ICON_SIZE + WEATHER_ICON_GAP + weatherTextWidth + WEATHER_CLOCK_GAP) : 0f;
+                float w = 22f + timeWidth + weatherSection + 12f + AVATAR + 8f;
                 String hold = RemoteKeys.isOn() ? c.getString(R.string.a11y_hint_hold_home) : null;
-                out.add(new A11y.Item(A11Y_PILL, c.getString(R.string.a11y_control_center), time, hold,
+                String pillContent = (weatherText != null ? weatherText + ", " : "") + time;
+                out.add(new A11y.Item(A11Y_PILL, c.getString(R.string.a11y_control_center), pillContent, hold,
                         new RectF(EDGE - w, CLOCK_TOP, EDGE, CLOCK_TOP + CLOCK_H), pillFocused));
             }
             Recommendations.Item program = backdrop != null ? backdrop.program : null;

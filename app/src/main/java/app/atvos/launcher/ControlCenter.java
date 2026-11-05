@@ -33,13 +33,13 @@ final class ControlCenter {
     }
 
     static final int PROFILE = 0, SETTINGS = 1, POWER = 2, WIFI = 3, DND = 4, BLUETOOTH = 5, SLEEP = 6,
-            INPUTS = 7, ACCESSIBILITY = 8, SYSTEM = 9, SEARCH = 10, LAUNCHER_SETTINGS = 11;
-    static final int COUNT = 12;
+            INPUTS = 7, ACCESSIBILITY = 8, SYSTEM = 9, SEARCH = 10, LAUNCHER_SETTINGS = 11, WALLPAPERS = 12;
+    static final int COUNT = 13;
     /**
      * The tiles in the order for screen readers: the status row, then the grid from left to right and from top to
      * bottom.
      */
-    static final int[] READING_ORDER = {LAUNCHER_SETTINGS, SETTINGS, PROFILE, POWER, WIFI, DND, BLUETOOTH, SLEEP,
+    static final int[] READING_ORDER = {WALLPAPERS, LAUNCHER_SETTINGS, SETTINGS, PROFILE, POWER, WIFI, DND, BLUETOOTH, SLEEP,
             INPUTS, ACCESSIBILITY, SYSTEM, SEARCH};
 
     // The grid: a circle is as tall as a pill, and two circles fill one pill column.
@@ -55,10 +55,10 @@ final class ControlCenter {
     private final float[] focus = new float[COUNT];
     private final float cogSize; // the size of the two Settings icons
     private final Drawable power, wifi, ethernet, moon, bluetooth, headphones, timer, input, accessibility,
-            system, search, settings, switches;
+            system, search, settings, switches, wallpapers;
     private final String powerOff, wifiLabel, ethernetLabel, connected, notConnected, dndLabel,
             bluetoothLabel, on, off, sleepTimerLabel, sleepLabel, minutes, profileLabel, settingsLabel, inputsLabel,
-            accessibilityLabel, systemLabel, searchLabel, launcherSettingsLabel, notAvailable;
+            accessibilityLabel, systemLabel, searchLabel, launcherSettingsLabel, wallpapersLabel, notAvailable;
 
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -82,10 +82,11 @@ final class ControlCenter {
         // visible gap between them. The glyph of each icon fills 20 of its 24 units.
         cogSize = avatar.width() * 0.95f; // slightly smaller than the avatar
         float glyph = cogSize * 20f / 24f, gap = 24f;
-        float cy = avatar.centerY(), sx = avatar.left - gap - glyph / 2f, qx = sx - glyph - gap;
+        float cy = avatar.centerY(), sx = avatar.left - gap - glyph / 2f, qx = sx - glyph - gap, wx = qx - glyph - gap;
         rects[PROFILE] = new RectF(avatar);
         rects[SETTINGS] = new RectF(sx - SETTINGS_D / 2f, cy - SETTINGS_D / 2f, sx + SETTINGS_D / 2f, cy + SETTINGS_D / 2f);
         rects[LAUNCHER_SETTINGS] = new RectF(qx - SETTINGS_D / 2f, cy - SETTINGS_D / 2f, qx + SETTINGS_D / 2f, cy + SETTINGS_D / 2f);
+        rects[WALLPAPERS] = new RectF(wx - SETTINGS_D / 2f, cy - SETTINGS_D / 2f, wx + SETTINGS_D / 2f, cy + SETTINGS_D / 2f);
         rects[POWER] = new RectF(lx, TOP, lx + COL_W, TOP + 2 * ROW_H + GAP);
         rects[WIFI] = pill(rx, 0);
         rects[DND] = pill(rx, 1);
@@ -113,6 +114,7 @@ final class ControlCenter {
         search = icon(context, R.drawable.ic_search);
         settings = icon(context, R.drawable.ic_settings);
         switches = icon(context, R.drawable.ic_switches);
+        wallpapers = icon(context, R.drawable.ic_wallpaper);
 
         powerOff = context.getString(R.string.power_off);
         wifiLabel = context.getString(R.string.wifi);
@@ -132,6 +134,7 @@ final class ControlCenter {
         systemLabel = context.getString(R.string.a11y_system);
         searchLabel = context.getString(R.string.a11y_search);
         launcherSettingsLabel = context.getString(R.string.a11y_launcher_settings);
+        wallpapersLabel = context.getString(R.string.a11y_wallpapers);
         minutes = context.getString(R.string.minutes);
         notAvailable = context.getString(R.string.not_available);
 
@@ -242,6 +245,7 @@ final class ControlCenter {
             case ACCESSIBILITY -> accessibilityLabel;
             case SYSTEM -> systemLabel;
             case LAUNCHER_SETTINGS -> launcherSettingsLabel;
+            case WALLPAPERS -> wallpapersLabel;
             default -> searchLabel;
         };
     }
@@ -288,6 +292,7 @@ final class ControlCenter {
             ring.setAlpha(Math.round(alpha * focus[PROFILE]));
             c.drawCircle(a.centerX(), a.centerY(), a.width() / 2f + 5f, ring);
         }
+        tile(c, glass, WALLPAPERS, alpha, wallpapers, 0, null, null);
         tile(c, glass, LAUNCHER_SETTINGS, alpha, switches, 0, null, null);
         tile(c, glass, SETTINGS, alpha, settings, 0, null, null);
 
@@ -313,7 +318,7 @@ final class ControlCenter {
      * timer, when they are on. No glyph goes to the left of {@code minX}. The clock draws the time and the avatar.
      */
     void drawStatus(Canvas c, float cy, int alpha, float minX) {
-        float size = 28f, x = rects[LAUNCHER_SETTINGS].left - 24f - size;
+        float size = 28f, x = rects[WALLPAPERS].left - 24f - size;
         Controls.State s = state;
         if (s.sleepAt > 0 && x >= minX) {
             drawIcon(c, timer, x, cy - size / 2f, size, WHITE, alpha);
@@ -335,7 +340,7 @@ final class ControlCenter {
         float radius = radii[id] * grow;
 
         // The buttons of the status row have no glass when they are not focused.
-        boolean bare = id == SETTINGS || id == LAUNCHER_SETTINGS;
+        boolean bare = id == SETTINGS || id == LAUNCHER_SETTINGS || id == WALLPAPERS;
         if (f < 0.99f && !bare) glass.draw(c, r, radius, 0x24FFFFFF, Math.round(alpha * (1f - f)));
         if (f > 0.01f) {
             fill.setColor(Color.argb(Math.round(alpha * f * 0.96f), 255, 255, 255));

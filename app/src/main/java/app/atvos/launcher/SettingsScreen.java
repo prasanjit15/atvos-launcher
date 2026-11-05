@@ -60,6 +60,19 @@ final class SettingsScreen {
         void setLight(boolean light);
         boolean use24Hour();
         void setUse24Hour(boolean on);
+        boolean weatherEnabled();
+        void setWeatherEnabled(boolean on);
+        boolean weatherFahrenheit();
+        void setWeatherFahrenheit(boolean on);
+        String weatherCity();
+        void setWeatherCity(String city);
+        void editText(String text, HomeView.TextEdit edit);
+        String ambientScene();
+        void setAmbientScene(String scene);
+        long shuffleInterval();
+        void setShuffleInterval(long ms);
+        boolean alwaysAmbient();
+        void setAlwaysAmbient(boolean on);
         /** Opens {@link #STORE} or {@link #APP_INFO}. Returns false if the TV cannot open it. */
         boolean open(int what);
         Donation donation();
@@ -73,7 +86,7 @@ final class SettingsScreen {
      * The targets of {@link Host#open}: the Google Play page of atvOS, and App Info for atvOS. The website is only an
      * address, because TV apps do not open a web browser (TV app quality, TV-WB).
      */
-    static final int STORE = 1, APP_INFO = 2;
+    static final int STORE = 1, APP_INFO = 2, SCENES = 9, SHUFFLE_INTERVAL = 10;
 
     private static final int MAIN = 0, GENERAL = 1, ABOUT = 2, APPEARANCE = 3, PROFILES = 4, PICTURE = 5,
             UNINSTALL = 6, SUPPORT = 7, HOME_SCREEN = 8;
@@ -164,9 +177,19 @@ final class SettingsScreen {
     }
 
     void open() {
+        openPage(MAIN);
+    }
+
+    void openPage(int targetPage) {
         if (shadowMask == null) shadowMask = makeShadowMask();
         under.clear();
-        page = MAIN;
+        if (targetPage == SCENES) {
+            under.push(new int[]{MAIN, 1});
+            under.push(new int[]{GENERAL, 1});
+            page = SCENES;
+        } else {
+            page = targetPage;
+        }
         busy = false;
         enter(-1);
     }
@@ -197,7 +220,36 @@ final class SettingsScreen {
                 rows.add(action(R.string.settings_acknowledgements, null, s(R.string.settings_acknowledgements_about), null));
                 rows.add(new Row(HEADER, s(R.string.settings_date_time).toUpperCase(Locale.getDefault()), null, null, null, true, false));
                 rows.add(action(R.string.settings_time_format, s(host.use24Hour() ? R.string.settings_24_hour : R.string.settings_12_hour),
-                        s(R.string.settings_time_format_about), () -> host.setUse24Hour(!host.use24Hour())));
+                        s(R.string.settings_time_format_about), () -> {
+                            host.setUse24Hour(!host.use24Hour());
+                            refresh();
+                        }));
+                rows.add(new Row(HEADER, s(R.string.settings_weather).toUpperCase(Locale.getDefault()), null, null, null, true, false));
+                rows.add(action(R.string.settings_weather_show, s(host.weatherEnabled() ? R.string.on : R.string.off),
+                        s(R.string.settings_weather_show_about), () -> {
+                            host.setWeatherEnabled(!host.weatherEnabled());
+                            refresh();
+                        }));
+                if (host.weatherEnabled()) {
+                    rows.add(action(R.string.settings_weather_unit, s(host.weatherFahrenheit() ? R.string.settings_weather_fahrenheit : R.string.settings_weather_celsius),
+                            s(R.string.settings_weather_unit_about), () -> {
+                                host.setWeatherFahrenheit(!host.weatherFahrenheit());
+                                refresh();
+                            }));
+                    String city = host.weatherCity();
+                    String cityDisplay = (city == null || city.isEmpty()) ? String.format(s(R.string.settings_weather_auto), Weather.autoCityName()) : city;
+                    rows.add(action(R.string.settings_weather_city, cityDisplay, s(R.string.settings_weather_city_about), () -> {
+                        host.editText(city != null ? city : "", new HomeView.TextEdit() {
+                            @Override
+                            public void changed(String text) {}
+                            @Override
+                            public void done(String text) {
+                                host.setWeatherCity(text);
+                                refresh();
+                            }
+                        });
+                    }));
+                }
             }
             case ABOUT -> {
                 title = s(R.string.settings_about);
@@ -211,6 +263,64 @@ final class SettingsScreen {
                 String words = s(R.string.settings_appearance_about);
                 rows.add(choice(s(R.string.settings_light), host.light(), words, () -> host.setLight(true)));
                 rows.add(choice(s(R.string.settings_dark), !host.light(), words, () -> host.setLight(false)));
+                rows.add(new Row(HEADER, s(R.string.settings_scenes).toUpperCase(Locale.getDefault()), null, null, null, true, false));
+                rows.add(nav(R.string.settings_scenes, sceneLabel(host.ambientScene()), s(R.string.settings_scenes_about), () -> go(SCENES)));
+                rows.add(action(R.string.settings_always_ambient, s(host.alwaysAmbient() ? R.string.on : R.string.off),
+                        s(R.string.settings_always_ambient_about), () -> {
+                            host.setAlwaysAmbient(!host.alwaysAmbient());
+                            refresh();
+                        }));
+            }
+            case SCENES -> {
+                title = s(R.string.settings_scenes);
+                String words = s(R.string.settings_scenes_about);
+                String chosen = host.ambientScene();
+                boolean shuffle = Backdrops.SCENE_SHUFFLE.equals(chosen);
+                rows.add(choice(s(R.string.scene_shuffle), shuffle, s(R.string.settings_scene_shuffle_about), () -> {
+                    host.setAmbientScene(Backdrops.SCENE_SHUFFLE);
+                    refresh();
+                }));
+                rows.add(nav(R.string.settings_shuffle_interval, shuffleIntervalShort(host.shuffleInterval()),
+                        s(R.string.settings_shuffle_interval_about), () -> go(SHUFFLE_INTERVAL)));
+                rows.add(new Row(HEADER, s(R.string.settings_wallpapers_header).toUpperCase(Locale.getDefault()), null, null, null, true, false));
+                String[] sceneKeys = {
+                        Backdrops.SCENE_AURORA,
+                        Backdrops.SCENE_GOLDEN_HOUR,
+                        Backdrops.SCENE_NIGHT_SKYLINE,
+                        Backdrops.SCENE_WATERLINE,
+                        Backdrops.SCENE_MISTY_PINE,
+                        Backdrops.SCENE_TESSELLATED,
+                        Backdrops.SCENE_GROSE_VALLEY,
+                        Backdrops.SCENE_ALBURY_STORM,
+                        Backdrops.SCENE_ARESQUIERS,
+                        Backdrops.SCENE_VANG_VIENG,
+                        Backdrops.SCENE_WP_ANDERS_SNOW,
+                        Backdrops.SCENE_WP_ANDERS_LAKE,
+                        Backdrops.SCENE_WP_ANDREW_COAST,
+                        Backdrops.SCENE_WP_CLAY_CITY,
+                        Backdrops.SCENE_WP_CRISTINA_DOLOMITES,
+                        Backdrops.SCENE_WP_JOHN_HIGHWAY,
+                        Backdrops.SCENE_WP_LUCA_BRAIES,
+                        Backdrops.SCENE_WP_LUCA_STARRY,
+                        Backdrops.SCENE_WP_MARTIN_FOREST,
+                        Backdrops.SCENE_WP_TOBIAS_AUTUMN,
+                        Backdrops.SCENE_WP_URBAN_DESERT
+                };
+                for (String scene : sceneKeys) {
+                    rows.add(choice(sceneLabel(scene), scene.equals(chosen), words, () -> host.setAmbientScene(scene)));
+                }
+            }
+            case SHUFFLE_INTERVAL -> {
+                title = s(R.string.settings_shuffle_interval);
+                String words = s(R.string.settings_shuffle_interval_about);
+                long chosen = host.shuffleInterval();
+                long[] intervals = {60_000L, 300_000L, 900_000L, 1_800_000L, 3_600_000L};
+                for (long interval : intervals) {
+                    rows.add(choice(shuffleIntervalFullLabel(interval), interval == chosen, words, () -> {
+                        host.setShuffleInterval(interval);
+                        refresh();
+                    }));
+                }
             }
             case PROFILES -> {
                 title = s(R.string.settings_profiles);
@@ -371,6 +481,52 @@ final class SettingsScreen {
             case Profile.NONE -> R.string.settings_none;
             default -> R.string.settings_picture_photo;
         });
+    }
+
+    private String sceneLabel(String scene) {
+        if (scene == null) return s(R.string.scene_aurora);
+        return s(switch (scene) {
+            case Backdrops.SCENE_SHUFFLE -> R.string.scene_shuffle;
+            case Backdrops.SCENE_GOLDEN_HOUR -> R.string.scene_golden_hour;
+            case Backdrops.SCENE_NIGHT_SKYLINE -> R.string.scene_night_skyline;
+            case Backdrops.SCENE_WATERLINE -> R.string.scene_waterline;
+            case Backdrops.SCENE_MISTY_PINE -> R.string.scene_misty_pine;
+            case Backdrops.SCENE_TESSELLATED -> R.string.scene_tessellated;
+            case Backdrops.SCENE_GROSE_VALLEY -> R.string.scene_grose_valley;
+            case Backdrops.SCENE_ALBURY_STORM -> R.string.scene_albury_storm;
+            case Backdrops.SCENE_ARESQUIERS -> R.string.scene_aresquiers;
+            case Backdrops.SCENE_VANG_VIENG -> R.string.scene_vang_vieng;
+            case Backdrops.SCENE_WP_ANDERS_SNOW -> R.string.scene_wp_anders_snow;
+            case Backdrops.SCENE_WP_ANDERS_LAKE -> R.string.scene_wp_anders_lake;
+            case Backdrops.SCENE_WP_ANDREW_COAST -> R.string.scene_wp_andrew_coast;
+            case Backdrops.SCENE_WP_CLAY_CITY -> R.string.scene_wp_clay_city;
+            case Backdrops.SCENE_WP_CRISTINA_DOLOMITES -> R.string.scene_wp_cristina_dolomites;
+            case Backdrops.SCENE_WP_JOHN_HIGHWAY -> R.string.scene_wp_john_highway;
+            case Backdrops.SCENE_WP_LUCA_BRAIES -> R.string.scene_wp_luca_braies;
+            case Backdrops.SCENE_WP_LUCA_STARRY -> R.string.scene_wp_luca_starry;
+            case Backdrops.SCENE_WP_MARTIN_FOREST -> R.string.scene_wp_martin_forest;
+            case Backdrops.SCENE_WP_TOBIAS_AUTUMN -> R.string.scene_wp_tobias_autumn;
+            case Backdrops.SCENE_WP_URBAN_DESERT -> R.string.scene_wp_urban_desert;
+            default -> R.string.scene_aurora;
+        });
+    }
+
+    private String shuffleIntervalFullLabel(long ms) {
+        if (ms == 60_000L) return s(R.string.shuffle_interval_60s);
+        if (ms == 300_000L) return s(R.string.shuffle_interval_5m);
+        if (ms == 900_000L) return s(R.string.shuffle_interval_15m);
+        if (ms == 1_800_000L) return s(R.string.shuffle_interval_30m);
+        if (ms == 3_600_000L) return s(R.string.shuffle_interval_1h);
+        return s(R.string.shuffle_interval_15m);
+    }
+
+    private String shuffleIntervalShort(long ms) {
+        if (ms == 60_000L) return s(R.string.shuffle_short_60s);
+        if (ms == 300_000L) return s(R.string.shuffle_short_5m);
+        if (ms == 900_000L) return s(R.string.shuffle_short_15m);
+        if (ms == 1_800_000L) return s(R.string.shuffle_short_30m);
+        if (ms == 3_600_000L) return s(R.string.shuffle_short_1h);
+        return s(R.string.shuffle_short_15m);
     }
 
     /** Opens a page above this page. The focus goes to its selected choice, else to its first row. */

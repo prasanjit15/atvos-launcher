@@ -20,6 +20,7 @@ import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
@@ -76,6 +77,7 @@ final class Backdrops {
     static final class Backdrop {
         final Bitmap sharp;
         final Bitmap blur;
+        final Bitmap foreground;
         final BitmapShader blurShader;
         /** The pixels of the blur. The glass mixes the pixels of two backdrops on the CPU during a crossfade. */
         final int[] blurPixels;
@@ -98,12 +100,17 @@ final class Backdrops {
         final int hintColor;
 
         Backdrop(Bitmap sharp, Bitmap blur, Recommendations.Item program) {
-            this(sharp, blur, program, null);
+            this(sharp, blur, null, program, null);
         }
 
         Backdrop(Bitmap sharp, Bitmap blur, Recommendations.Item program, List<Card> row) {
+            this(sharp, blur, null, program, row);
+        }
+
+        Backdrop(Bitmap sharp, Bitmap blur, Bitmap foreground, Recommendations.Item program, List<Card> row) {
             this.sharp = sharp;
             this.blur = blur;
+            this.foreground = foreground;
             this.blurShader = new BitmapShader(blur, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
             this.blurPixels = new int[blur.getWidth() * blur.getHeight()];
             blur.getPixels(blurPixels, 0, blur.getWidth(), 0, 0, blur.getWidth(), blur.getHeight());
@@ -135,6 +142,53 @@ final class Backdrops {
     }
 
     static final String DEFAULT = "default";
+    static final String SCENE_SHUFFLE = "shuffle";
+    static final String SCENE_AURORA = "aurora";
+    static final String SCENE_GOLDEN_HOUR = "golden_hour";
+    static final String SCENE_NIGHT_SKYLINE = "night_skyline";
+    static final String SCENE_WATERLINE = "waterline";
+    static final String SCENE_MISTY_PINE = "misty_pine";
+    static final String SCENE_TESSELLATED = "tessellated";
+    static final String SCENE_GROSE_VALLEY = "grose_valley";
+    static final String SCENE_ALBURY_STORM = "albury_storm";
+    static final String SCENE_ARESQUIERS = "aresquiers";
+    static final String SCENE_VANG_VIENG = "vang_vieng";
+    static final String SCENE_WP_ANDERS_SNOW = "wp_anders_snow";
+    static final String SCENE_WP_ANDERS_LAKE = "wp_anders_lake";
+    static final String SCENE_WP_ANDREW_COAST = "wp_andrew_coast";
+    static final String SCENE_WP_CLAY_CITY = "wp_clay_city";
+    static final String SCENE_WP_CRISTINA_DOLOMITES = "wp_cristina_dolomites";
+    static final String SCENE_WP_JOHN_HIGHWAY = "wp_john_highway";
+    static final String SCENE_WP_LUCA_BRAIES = "wp_luca_braies";
+    static final String SCENE_WP_LUCA_STARRY = "wp_luca_starry";
+    static final String SCENE_WP_MARTIN_FOREST = "wp_martin_forest";
+    static final String SCENE_WP_TOBIAS_AUTUMN = "wp_tobias_autumn";
+    static final String SCENE_WP_URBAN_DESERT = "wp_urban_desert";
+
+    static final String[] ALL_SCENES = {
+            SCENE_AURORA,
+            SCENE_GOLDEN_HOUR,
+            SCENE_NIGHT_SKYLINE,
+            SCENE_WATERLINE,
+            SCENE_MISTY_PINE,
+            SCENE_TESSELLATED,
+            SCENE_GROSE_VALLEY,
+            SCENE_ALBURY_STORM,
+            SCENE_ARESQUIERS,
+            SCENE_VANG_VIENG,
+            SCENE_WP_ANDERS_SNOW,
+            SCENE_WP_ANDERS_LAKE,
+            SCENE_WP_ANDREW_COAST,
+            SCENE_WP_CLAY_CITY,
+            SCENE_WP_CRISTINA_DOLOMITES,
+            SCENE_WP_JOHN_HIGHWAY,
+            SCENE_WP_LUCA_BRAIES,
+            SCENE_WP_LUCA_STARRY,
+            SCENE_WP_MARTIN_FOREST,
+            SCENE_WP_TOBIAS_AUTUMN,
+            SCENE_WP_URBAN_DESERT
+    };
+    static final String KEY_SCENE = "ambient_scene";
     /**
      * One card in a row: its program, its picture and its width in design units. The picture is cropped to the card
      * (16:9, or square for square art) at the card size, with round corners. The home screen draws it as a plain
@@ -171,12 +225,15 @@ final class Backdrops {
     private static final int MAX_CACHED = 72; // some pages for each app that has a top shelf
     private static final long MAX_CACHE_BYTES = 128L << 20; // a download can be 16 MB, so the count alone is not a limit
 
+    private final Context context;
     private final ContentResolver resolver;
     private final PackageManager pm;
     private final SharedPreferences prefs;
     private final File downloads;
     private final int width, height;
-    private final Backdrop fallback;
+    private Backdrop fallback;
+    private String currentScene;
+    private final Map<String, Backdrop> scenePresets = new HashMap<>();
 
     // The best program and all pages of each app. The IO thread writes it and the UI thread reads it.
     private volatile Map<String, Recommendations.Item> recommended = Collections.emptyMap();
@@ -206,7 +263,10 @@ final class Backdrops {
         }
     };
 
+    private String activeShuffleScene;
+
     Backdrops(Context context, int width, int height) {
+        this.context = context;
         this.resolver = context.getContentResolver();
         this.pm = context.getPackageManager();
         this.prefs = context.getSharedPreferences(HomeActivity.PREFS, Context.MODE_PRIVATE);
@@ -217,9 +277,117 @@ final class Backdrops {
         this.height = Math.max(1, Math.round(height * k));
         ActivityManager am = context.getSystemService(ActivityManager.class);
         this.cacheSize = am != null && am.isLowRamDevice() ? 3 : 6;
-        Bitmap aurora = bake(aurora());
-        Bitmap blurred = blur(aurora);
-        this.fallback = new Backdrop(toHardware(aurora), blurred, null);
+        this.currentScene = prefs.getString(KEY_SCENE, SCENE_AURORA);
+        if (SCENE_SHUFFLE.equals(currentScene)) {
+            advanceShuffle();
+        } else {
+            this.fallback = getScene(currentScene);
+        }
+    }
+
+    void setScene(String scene) {
+        if (scene == null) scene = SCENE_AURORA;
+        this.currentScene = scene;
+        prefs.edit().putString(KEY_SCENE, scene).apply();
+        if (SCENE_SHUFFLE.equals(scene)) {
+            advanceShuffle();
+        } else {
+            this.fallback = getScene(scene);
+        }
+    }
+
+    boolean isShuffle() {
+        return SCENE_SHUFFLE.equals(currentScene);
+    }
+
+    void advanceShuffle() {
+        int next = (int) (Math.random() * ALL_SCENES.length);
+        if (activeShuffleScene != null && ALL_SCENES.length > 1) {
+            while (ALL_SCENES[next].equals(activeShuffleScene)) {
+                next = (int) (Math.random() * ALL_SCENES.length);
+            }
+        }
+        activeShuffleScene = ALL_SCENES[next];
+        this.fallback = getScene(activeShuffleScene);
+    }
+
+    String activeShuffleScene() {
+        return activeShuffleScene;
+    }
+
+    String scene() {
+        return currentScene != null ? currentScene : SCENE_AURORA;
+    }
+
+    private Bitmap loadAsset(String name) {
+        try (InputStream is = context.getAssets().open("backgrounds/" + name)) {
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            Bitmap b = BitmapFactory.decodeStream(is, null, opts);
+            if (b == null) return null;
+            if (b.getWidth() != width || b.getHeight() != height) {
+                Bitmap scaled = Bitmap.createScaledBitmap(b, width, height, true);
+                if (scaled != b) b.recycle();
+                return scaled;
+            }
+            return b;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    Backdrop getScene(String sceneName) {
+        if (sceneName == null) sceneName = SCENE_AURORA;
+        Backdrop b = scenePresets.get(sceneName);
+        if (b == null) {
+            String assetFile = switch (sceneName) {
+                case SCENE_GOLDEN_HOUR -> "scene-golden.jpg";
+                case SCENE_NIGHT_SKYLINE -> "scene-night.jpg";
+                case SCENE_WATERLINE -> "scene-water.jpg";
+                case SCENE_MISTY_PINE -> "scene-fog.jpg";
+                case SCENE_TESSELLATED -> "tessellated-pavement.jpg";
+                case SCENE_GROSE_VALLEY -> "grose-valley.jpg";
+                case SCENE_ALBURY_STORM -> "albury-storm.jpg";
+                case SCENE_ARESQUIERS -> "aresquiers-beach.jpg";
+                case SCENE_VANG_VIENG -> "vang-vieng-sunset.jpg";
+                case SCENE_WP_ANDERS_SNOW -> "anders-jilden-AkUR27wtaxs-unsplash.jpg";
+                case SCENE_WP_ANDERS_LAKE -> "anders-jilden-cYrMQA7a3Wc-unsplash.jpg";
+                case SCENE_WP_ANDREW_COAST -> "andrew-ridley-Kt5hRENuotI-unsplash.jpg";
+                case SCENE_WP_CLAY_CITY -> "clay-banks-u27Rrbs9Dwc-unsplash.jpg";
+                case SCENE_WP_CRISTINA_DOLOMITES -> "cristina-gottardi-CSpjU6hYo_0-unsplash.jpg";
+                case SCENE_WP_JOHN_HIGHWAY -> "john-towner-JgOeRuGD_Y4-unsplash.jpg";
+                case SCENE_WP_LUCA_BRAIES -> "luca-bravo-zAjdgNXsMeg-unsplash.jpg";
+                case SCENE_WP_LUCA_STARRY -> "luca-micheli-ruWkmt3nU58-unsplash.jpg";
+                case SCENE_WP_MARTIN_FOREST -> "martin-martz-xA4v5VqLATs-unsplash.jpg";
+                case SCENE_WP_TOBIAS_AUTUMN -> "tobias-rademacher-NuBvAE6VfSM-unsplash.jpg";
+                case SCENE_WP_URBAN_DESERT -> "urban-vintage-78A265wPiO4-unsplash.jpg";
+                default -> sceneName.endsWith(".jpg") ? sceneName : "scene-dawn.jpg";
+            };
+            String fgFile = switch (sceneName) {
+                case SCENE_GOLDEN_HOUR -> "scene-golden-fg.webp";
+                case SCENE_NIGHT_SKYLINE -> "scene-night-fg.webp";
+                case SCENE_MISTY_PINE -> "scene-fog-fg.webp";
+                case SCENE_AURORA -> "scene-dawn-fg.webp";
+                default -> null;
+            };
+            Bitmap raw = loadAsset(assetFile);
+            if (raw == null) {
+                raw = switch (sceneName) {
+                    case SCENE_GOLDEN_HOUR -> goldenHour();
+                    case SCENE_NIGHT_SKYLINE -> nightSkyline();
+                    case SCENE_WATERLINE -> waterline();
+                    case SCENE_MISTY_PINE -> mistyPine();
+                    default -> aurora();
+                };
+            }
+            Bitmap fgRaw = fgFile != null ? loadAsset(fgFile) : null;
+            Bitmap baked = bake(raw);
+            Bitmap blurred = blur(baked);
+            Bitmap fgHw = fgRaw != null ? toHardware(fgRaw) : null;
+            b = new Backdrop(toHardware(baked), blurred, fgHw, null, null);
+            scenePresets.put(sceneName, b);
+        }
+        return b;
     }
 
     /**
@@ -1406,6 +1574,127 @@ final class Backdrops {
         glow(c, p, w * 0.84f, h * 0.26f, w * 0.52f, 0x997B3FC4);
         glow(c, p, w * 0.52f, h * 1.00f, w * 0.58f, 0x7A0E8A9A);
         glow(c, p, w * 1.02f, h * 1.02f, w * 0.40f, 0x59B0306E);
+        return b;
+    }
+
+    /** Cinematic sunset gradient over rolling mountain silhouettes. */
+    private static Bitmap goldenHour() {
+        int w = 640, h = 360;
+        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setDither(true);
+        int[] skyColors = {0xFF150824, 0xFF3D1238, 0xFF8A2B3D, 0xFFDE6426, 0xFFF7A23B};
+        float[] skyPos = {0f, 0.35f, 0.65f, 0.85f, 1f};
+        p.setShader(new LinearGradient(0, 0, 0, h, skyColors, skyPos, Shader.TileMode.CLAMP));
+        c.drawPaint(p);
+
+        glow(c, p, w * 0.50f, h * 0.82f, w * 0.50f, 0xDDFFB84D);
+        glow(c, p, w * 0.50f, h * 0.82f, w * 0.25f, 0xFFFFE599);
+
+        Path ridge1 = new Path();
+        ridge1.moveTo(0, h * 0.80f);
+        ridge1.cubicTo(w * 0.25f, h * 0.72f, w * 0.40f, h * 0.84f, w * 0.65f, h * 0.76f);
+        ridge1.cubicTo(w * 0.80f, h * 0.70f, w * 0.90f, h * 0.78f, w, h * 0.74f);
+        ridge1.lineTo(w, h);
+        ridge1.lineTo(0, h);
+        ridge1.close();
+        p.setShader(null);
+        p.setColor(0x882A0C28);
+        c.drawPath(ridge1, p);
+
+        Path ridge2 = new Path();
+        ridge2.moveTo(0, h * 0.88f);
+        ridge2.cubicTo(w * 0.20f, h * 0.82f, w * 0.35f, h * 0.90f, w * 0.55f, h * 0.84f);
+        ridge2.cubicTo(w * 0.75f, h * 0.78f, w * 0.88f, h * 0.86f, w, h * 0.82f);
+        ridge2.lineTo(w, h);
+        ridge2.lineTo(0, h);
+        ridge2.close();
+        p.setColor(0xFF0F0414);
+        c.drawPath(ridge2, p);
+        return b;
+    }
+
+    /** Deep obsidian night sky with city horizon glow and layered building skyline. */
+    private static Bitmap nightSkyline() {
+        int w = 640, h = 360;
+        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setDither(true);
+        int[] skyColors = {0xFF03050A, 0xFF080E1C, 0xFF121E36, 0xFF1E2D4A};
+        p.setShader(new LinearGradient(0, 0, 0, h, skyColors, null, Shader.TileMode.CLAMP));
+        c.drawPaint(p);
+
+        glow(c, p, w * 0.45f, h * 0.90f, w * 0.65f, 0x88466699);
+        glow(c, p, w * 0.65f, h * 0.92f, w * 0.35f, 0x77FFB347);
+
+        p.setShader(null);
+        p.setColor(0xBB0A101C);
+        drawSkylineBlocks(c, p, w, h, 0.75f, 13);
+
+        p.setColor(0xFF04060B);
+        drawSkylineBlocks(c, p, w, h, 0.82f, 19);
+        return b;
+    }
+
+    private static void drawSkylineBlocks(Canvas c, Paint p, int w, int h, float baseH, int count) {
+        float step = (float) w / count;
+        for (int i = 0; i < count; i++) {
+            float bh = (float) (Math.sin(i * 1.7) * 0.5 + 0.5) * 0.12f * h;
+            float top = h * baseH - bh;
+            float left = i * step + 2f;
+            float right = left + step - 1f;
+            c.drawRect(left, top, right, h, p);
+        }
+    }
+
+    /** Midnight marine and oceanic aquamarine depth glow. */
+    private static Bitmap waterline() {
+        int w = 640, h = 360;
+        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setDither(true);
+        int[] waterColors = {0xFF040914, 0xFF071B28, 0xFF0B3344, 0xFF072430, 0xFF030E14};
+        float[] waterPos = {0f, 0.45f, 0.65f, 0.85f, 1f};
+        p.setShader(new LinearGradient(0, 0, 0, h, waterColors, waterPos, Shader.TileMode.CLAMP));
+        c.drawPaint(p);
+
+        glow(c, p, w * 0.30f, h * 0.40f, w * 0.60f, 0x99186675);
+        glow(c, p, w * 0.75f, h * 0.55f, w * 0.45f, 0x880E9AA8);
+        glow(c, p, w * 0.50f, h * 0.75f, w * 0.70f, 0x661AB898);
+        return b;
+    }
+
+    /** Moody misty forest gradient with dawn ambient fog and pine silhouettes. */
+    private static Bitmap mistyPine() {
+        int w = 640, h = 360;
+        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setDither(true);
+        int[] pineColors = {0xFF080E10, 0xFF111E20, 0xFF1C3230, 0xFF2B4740};
+        p.setShader(new LinearGradient(0, 0, 0, h, pineColors, null, Shader.TileMode.CLAMP));
+        c.drawPaint(p);
+
+        glow(c, p, w * 0.50f, h * 0.45f, w * 0.60f, 0x88386354);
+        glow(c, p, w * 0.20f, h * 0.70f, w * 0.50f, 0x662A4E42);
+
+        Paint fog = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fog.setShader(new LinearGradient(0, h * 0.60f, 0, h * 0.85f, 0x004A7065, 0x77558577, Shader.TileMode.CLAMP));
+        c.drawRect(0, h * 0.60f, w, h * 0.85f, fog);
+
+        Path trees = new Path();
+        trees.moveTo(0, h * 0.78f);
+        trees.cubicTo(w * 0.25f, h * 0.72f, w * 0.50f, h * 0.82f, w * 0.75f, h * 0.74f);
+        trees.lineTo(w, h * 0.76f);
+        trees.lineTo(w, h);
+        trees.lineTo(0, h);
+        trees.close();
+        p.setShader(null);
+        p.setColor(0xFF081210);
+        c.drawPath(trees, p);
         return b;
     }
 

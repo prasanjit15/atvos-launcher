@@ -101,6 +101,7 @@ public final class HomeActivity extends Activity implements HomeView.Host {
     private Controls controls;
     private Profile profile;
     private Donation donation;
+    private Weather weather;
     private HomeView view;
     private boolean homeInstance;      // true if the Home button started this instance
     private EditText input;            // receives the text from the TV keyboard (a folder name)
@@ -165,6 +166,8 @@ public final class HomeActivity extends Activity implements HomeView.Host {
         view.requestFocus();
         view.setHoldHintLearned(getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_HOLD_LEARNED, false));
         profile.load(view::setAvatar);
+        weather = new Weather(this);
+        weather.start(view::setWeather);
 
         IntentFilter changes = new IntentFilter();
         changes.addAction(Intent.ACTION_PACKAGE_ADDED);
@@ -210,6 +213,11 @@ public final class HomeActivity extends Activity implements HomeView.Host {
         super.onResume();
         resumed = true;
         refresh();
+        if (weather != null && weather.current() != null) view.setWeather(weather.current());
+        if (backdrops != null && backdrops.isShuffle()) {
+            view.removeCallbacks(shuffleTask);
+            view.postDelayed(shuffleTask, shuffleInterval());
+        }
         profile.refresh(view::setAvatar); // not more than once a day
         donation.settle(); // only after a purchase sheet opened: a donation that Google Play completed later
         view.setClockRunning(true);
@@ -226,6 +234,7 @@ public final class HomeActivity extends Activity implements HomeView.Host {
     protected void onPause() {
         finishTextEdit();
         view.removeCallbacks(checkApproval); // posted again at the next resume
+        view.removeCallbacks(shuffleTask);
         resumed = false;
         view.setClockRunning(false);
         unregisterReceiver(clock);
@@ -296,6 +305,7 @@ public final class HomeActivity extends Activity implements HomeView.Host {
         RemoteKeys.unlisten(keysChanged);
         checkApproval.run(); // stops a run that waits for the prompt
         unregisterReceiver(packages);
+        if (weather != null) weather.stop();
         io.shutdownNow();
         net.shutdownNow();
         decode.shutdownNow();
@@ -362,11 +372,19 @@ public final class HomeActivity extends Activity implements HomeView.Host {
     private void updateBackdrop() {
         // When the focus is below the dock, the backdrop does not change. It stays blurred and dimmed.
         if (!focusInDock && !wantedBackdrop.isEmpty()) return;
-        // A folder shows the backdrop of its first app.
-        Apps.Entry shown = focused != null && focused.folder != null
-                ? (focused.folder.apps.isEmpty() ? null : focused.folder.apps.get(0)) : focused;
-        String key = shown != null ? backdrops.backdropKey(shown.pkg, fullScreen) : Backdrops.DEFAULT;
-        Recommendations.Item program = shown != null ? backdrops.recommendation(shown.pkg) : null;
+        boolean alwaysAmbient = alwaysAmbient();
+        String key;
+        Recommendations.Item program;
+        if (alwaysAmbient) {
+            key = Backdrops.DEFAULT;
+            program = null;
+        } else {
+            // A folder shows the backdrop of its first app.
+            Apps.Entry shown = focused != null && focused.folder != null
+                    ? (focused.folder.apps.isEmpty() ? null : focused.folder.apps.get(0)) : focused;
+            key = shown != null ? backdrops.backdropKey(shown.pkg, fullScreen) : Backdrops.DEFAULT;
+            program = shown != null ? backdrops.recommendation(shown.pkg) : null;
+        }
         if (key.equals(wantedBackdrop)) return;
         wantedBackdrop = key;
         Backdrops.Backdrop cached = backdrops.cached(key);
@@ -551,6 +569,10 @@ public final class HomeActivity extends Activity implements HomeView.Host {
                 view.openSettings();
                 yield false;
             }
+            case ControlCenter.WALLPAPERS -> {
+                view.openWallpapers();
+                yield false;
+            }
             case ControlCenter.INPUTS, ControlCenter.SEARCH -> {
                 if (!controls.open(id == ControlCenter.INPUTS ? Controls.INPUTS : Intent.ACTION_ASSIST)) {
                     Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
@@ -731,6 +753,98 @@ public final class HomeActivity extends Activity implements HomeView.Host {
     public void setUse24Hour(boolean on) {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_24_HOUR, on).apply();
         view.timeFormatChanged();
+    }
+
+    @Override
+    public boolean weatherEnabled() {
+        return weather != null && weather.isEnabled();
+    }
+
+    @Override
+    public void setWeatherEnabled(boolean on) {
+        if (weather != null) weather.setEnabled(on);
+    }
+
+    @Override
+    public boolean weatherFahrenheit() {
+        return weather != null && weather.isFahrenheit();
+    }
+
+    @Override
+    public void setWeatherFahrenheit(boolean on) {
+        if (weather != null) weather.setFahrenheit(on);
+    }
+
+    @Override
+    public String weatherCity() {
+        return weather != null ? weather.city() : "";
+    }
+
+    @Override
+    public void setWeatherCity(String city) {
+        if (weather != null) weather.setCity(city);
+    }
+
+    static final String KEY_ALWAYS_AMBIENT = "always_ambient";
+    static final String KEY_SHUFFLE_INTERVAL = "shuffle_interval";
+    static final long DEFAULT_SHUFFLE_INTERVAL = 15 * 60 * 1000L; // 15 minutes
+
+    @Override
+    public long shuffleInterval() {
+        return getSharedPreferences(PREFS, MODE_PRIVATE).getLong(KEY_SHUFFLE_INTERVAL, DEFAULT_SHUFFLE_INTERVAL);
+    }
+
+    @Override
+    public void setShuffleInterval(long ms) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putLong(KEY_SHUFFLE_INTERVAL, ms).apply();
+        if (backdrops != null && backdrops.isShuffle()) {
+            view.removeCallbacks(shuffleTask);
+            view.postDelayed(shuffleTask, ms);
+        }
+    }
+
+    private final Runnable shuffleTask = new Runnable() {
+        @Override
+        public void run() {
+            if (backdrops != null && backdrops.isShuffle() && resumed) {
+                backdrops.advanceShuffle();
+                wantedBackdrop = "";
+                view.setBackdrop(backdrops.cached(Backdrops.DEFAULT));
+                updateBackdrop();
+                view.postDelayed(this, shuffleInterval());
+            }
+        }
+    };
+
+    @Override
+    public String ambientScene() {
+        return backdrops != null ? backdrops.scene() : Backdrops.SCENE_AURORA;
+    }
+
+    @Override
+    public void setAmbientScene(String scene) {
+        if (backdrops != null) {
+            view.removeCallbacks(shuffleTask);
+            backdrops.setScene(scene);
+            wantedBackdrop = "";
+            view.setBackdrop(backdrops.cached(Backdrops.DEFAULT));
+            updateBackdrop();
+            if (backdrops.isShuffle()) {
+                view.postDelayed(shuffleTask, shuffleInterval());
+            }
+        }
+    }
+
+    @Override
+    public boolean alwaysAmbient() {
+        return getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_ALWAYS_AMBIENT, true);
+    }
+
+    @Override
+    public void setAlwaysAmbient(boolean on) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ALWAYS_AMBIENT, on).apply();
+        wantedBackdrop = "";
+        updateBackdrop();
     }
 
     /**
